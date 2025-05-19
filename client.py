@@ -10,26 +10,43 @@ class RobotController:
         self.my_id = robot_id
         self.position = None
         self.orientation = None
+        self.robot_data = {}
+        self.on_tick_callbacks = {}
 
         self.pipuck = PiPuck(epuck_version=2)
 
         def on_connect(client, userdata, flags, rc):
             print("Connected with result code " + str(rc))
-            client.subscribe("robot_pos/all")
+            client.subscribe('robot_pos/all')
+            client.subscribe(f'robot/{self.my_id}')
 
         def on_message(client, userdata, msg):
             try:
                 data = json.loads(msg.payload.decode())
-                if self.my_id in data.keys():
-                    self.position = np.asarray(data[self.my_id]['position'])
-                    self.orientation = self.angle_to_orientation(data[self.my_id]['angle'])
-                else:
-                    print('Err: no position')
+                if msg.topic == 'robot_pos/all':
+                    for id in (set(data.keys) - set(self.robot_data.keys())):
+                        since = self.robot_data[id]['seen_since']
+                        if (since > 10) & (id == self.my_id):
+                            print('Error: No position')
+                        else:
+                            self.robot_data[id]['counter'] = since+1
+
+                    for id in data.keys():
+                        self.robot_data[id]['position'] = np.asarray(data[id]['position'])
+                        self.robot_data[id]['orientation'] = self.angle_to_orientation(data[id]['angle'])
+                        self.robot_data[id]['seen_since'] = 0
+
+                    self.position = self.robot_data[self.my_id]['position']
+                    self.orientation = self.robot_data[self.my_id]['orientation']
+                elif msg.topic == 'robot/{self.my_id}':
+                    print('Got message')
                     print(data)
             except json.JSONDecodeError:
                 print(f'invalid json: {msg.payload}')
 
-
+        def on_tick(self):
+            for key in self.on_tick_callbacks:
+                self.on_tick_callbacks[key](self)
 
         self.client = mqtt.Client()
         self.client.on_connect = on_connect
@@ -54,12 +71,15 @@ class RobotController:
 
     def go_to_point(self, point, eps=0.01, speed=1000):
         delta = self.position - point
-        if np.linalg.norm(self.position - point) <= eps:
+        if np.linalg.norm(delta) <= eps:
             return True
         if not self.orient_towards(point):
             return False
         self.pipuck.epuck.set_motor_speeds(speed, speed)
         return False
+    
+    def dist_to(self, point):
+        return np.linalg.norm(self.position - point)
 
     def angle_to_orientation(self, angle):
         angle_radians = math.radians(angle) + np.pi
@@ -88,9 +108,18 @@ def get_random_border_point():
         return np.asarray([0.1, np.random.uniform(0.1, 0.9)])
     else:
         return np.asarray([0.9, np.random.uniform(0.1, 0.9)])
+    
+def greetings(controller):
+    for id in controller.robot_data:
+        state = controller.robot_data[id]
+        if controller.dist_to(state['position']) and not('greeted' in state.keys()) and not(state['greeted']):
+            controller.robot_data[id]['greeted'] = True
+            controller.client.publish(id, {'Greetings': 'You are greeted!'})
 
 controller = RobotController('33')
 controller.start_mqtt()
+
+controller.on_tick_callbacks['Greetings'] = greetings
 
 try:
     for i in range(100):
@@ -105,18 +134,21 @@ try:
     print(f'Goal is {goal}')
 
     for i in range(500):
-        # if (controller.go_to_point(goal)):
-        #     goal = get_random_border_point()
-        #     print(f'Goal is {goal}')
+        if (controller.go_to_point(goal)):
+            goal = get_random_border_point()
+            print(f'Goal is {goal}')
 
-        if(controller.orient_towards(goal)):
-            controller.stop_robot()
+        # if(controller.orient_towards(goal)):
+        #     controller.stop_robot()
+        controller.go_to_point(goal)
+
+        controller.on_tick()
 
         time.sleep(0.03)
         if i % 20 == 0:
             pos = controller.position
             # print(f'Position: {pos}')
-            print(f'Orientation: {controller.orientation}')
+            # print(f'Orientation: {controller.orientation}')
 
             if (pos[0] < 0) | (pos[0] > 2) | (pos[1] < 0) | (pos[1] > 1):
                 break
