@@ -24,7 +24,7 @@ class RobotController:
             try:
                 data = json.loads(msg.payload.decode())
                 if msg.topic == 'robot_pos/all':
-                    for id in (set(data.keys) - set(self.robot_data.keys())):
+                    for id in (set(self.robot_data.keys()) - set(data.keys())):
                         since = self.robot_data[id]['seen_since']
                         if (since > 10) & (id == self.my_id):
                             print('Error: No position')
@@ -32,6 +32,8 @@ class RobotController:
                             self.robot_data[id]['counter'] = since+1
 
                     for id in data.keys():
+                        if not id in self.robot_data.keys():
+                            self.robot_data[id] = {}
                         self.robot_data[id]['position'] = np.asarray(data[id]['position'])
                         self.robot_data[id]['orientation'] = self.angle_to_orientation(data[id]['angle'])
                         self.robot_data[id]['seen_since'] = 0
@@ -43,10 +45,6 @@ class RobotController:
                     print(data)
             except json.JSONDecodeError:
                 print(f'invalid json: {msg.payload}')
-
-        def on_tick(self):
-            for key in self.on_tick_callbacks:
-                self.on_tick_callbacks[key](self)
 
         self.client = mqtt.Client()
         self.client.on_connect = on_connect
@@ -69,7 +67,7 @@ class RobotController:
             self.pipuck.epuck.set_motor_speeds(-speed, speed)
         return False
 
-    def go_to_point(self, point, eps=0.01, speed=1000):
+    def go_to_point(self, point, eps=0.03, speed=1000):
         delta = self.position - point
         if np.linalg.norm(delta) <= eps:
             return True
@@ -97,6 +95,10 @@ class RobotController:
     def run(self):
         self.pipuck.epuck.set_motor_speeds(50, 50)
 
+    def on_tick(self):
+        for key in self.on_tick_callbacks:
+            self.on_tick_callbacks[key](self)
+
 
 def get_random_border_point():
     scenario = np.random.randint(1, 5)
@@ -116,10 +118,10 @@ def greetings(controller):
             controller.robot_data[id]['greeted'] = True
             controller.client.publish(id, {'Greetings': 'You are greeted!'})
 
-controller = RobotController('33')
+controller = RobotController('17')
 controller.start_mqtt()
 
-controller.on_tick_callbacks['Greetings'] = greetings
+#controller.on_tick_callbacks['Greetings'] = greetings
 
 try:
     for i in range(100):
@@ -130,27 +132,28 @@ try:
             print('Waiting for position')
 
     #goal = get_random_border_point()
-    goal = np.zeros(2)
+    goal = np.zeros(2) + 0.1
     print(f'Goal is {goal}')
 
-    for i in range(500):
-        if (controller.go_to_point(goal)):
+    for i in range(10000):
+        if (controller.go_to_point(goal, speed=200)):
             goal = get_random_border_point()
             print(f'Goal is {goal}')
 
-        # if(controller.orient_towards(goal)):
-        #     controller.stop_robot()
-        controller.go_to_point(goal)
+        if(controller.orient_towards(goal)):
+            controller.stop_robot()
+        #controller.go_to_point(goal)
 
         controller.on_tick()
 
         time.sleep(0.03)
         if i % 20 == 0:
             pos = controller.position
-            # print(f'Position: {pos}')
-            # print(f'Orientation: {controller.orientation}')
+            print(f'Position: {pos}')
+            print(f'Orientation: {controller.orientation}')
 
             if (pos[0] < 0) | (pos[0] > 2) | (pos[1] < 0) | (pos[1] > 1):
+                print('out of Bounds')
                 break
 except Exception as e:
     print(e)
