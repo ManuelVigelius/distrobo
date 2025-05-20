@@ -46,15 +46,15 @@ class RobotController:
             except json.JSONDecodeError:
                 print(f'invalid json: {msg.payload}')
 
-        # self.client = mqtt.Client()
-        # self.client.on_connect = on_connect
-        # self.client.on_message = on_message
+        self.client = mqtt.Client()
+        self.client.on_connect = on_connect
+        self.client.on_message = on_message
 
-        # Broker = "192.168.178.56"  # Replace with your broker address
-        # Port = 1883 # standard MQTT port
-        # self.client.connect(Broker, Port, 60)
+        Broker = "192.168.178.56"  # Replace with your broker address
+        Port = 1883 # standard MQTT port
+        self.client.connect(Broker, Port, 60)
 
-    def orient_towards(self, point, eps=0.05, speed=200):
+    def orient_towards(self, point, eps=0.01, speed=200):
         delta = self.position - point
         inner_prod = (delta / np.linalg.norm(delta)) @ self.orientation
         l = [[0, 1], [-1, 0]] @ self.orientation
@@ -122,45 +122,46 @@ def collect_position_dataset(controller, n=20):
     time.sleep(5)
     data = []
 
-    speeds = np.random.uniform(low=-1000, high=1000, size=[20, 2]).astype(int)
+    speeds = np.random.uniform(low=-1000, high=1000, size=[n, 2]).astype(int)
     speeds = np.repeat(speeds, 2, axis=0)
     speeds[1::2] *= -1
+    speeds = speeds.tolist()
 
-    for l, r in speeds:
-        time.sleep(5)
+    sleep_times = (np.random.uniform(size=n) + 0.5).repeat(2).tolist()
+
+    time.sleep(5)
+    for i in range(n*2):
+        l, r = speeds[i]
+        sleep_time = sleep_times[i]
         print(f'Run with {l}, {r}')
-        sleep_time = np.random.uniform() + 0.5
         current_sample = {
-            'start_position': controller.position,
-            'start_orientation': controller.orientation,
+            'start_position': controller.position.tolist(),
+            'start_orientation': controller.orientation.tolist(),
             'l': l,
             'r': r,
         }
         start_time = time.time()
         controller.run(l=l, r=r)
         time.sleep(sleep_time)
-        current_sample['time'] = time.time() - start_time()
-        data.append(current_sample)
+        controller.stop_robot()
+        current_sample['time'] = time.time() - start_time
         time.sleep(5)
+        current_sample['end_position'] = controller.position.tolist()
+        current_sample['end_orientation'] = controller.orientation.tolist()
+        data.append(current_sample)
     
     with open("data.json", 'w') as json_file:
         json.dump(data, json_file, indent=4)
 
 
-# controller = RobotController('7')
-# controller.start_mqtt()
+controller = RobotController('18')
+controller.start_mqtt()
 
 #controller.on_tick_callbacks['Greetings'] = greetings
 
 try:
-    pipuck = PiPuck(epuck_version=2)
-    pipuck.epuck.set_motor_speeds(50, 50)
 
-    # controller.run()
-    time.sleep(1)
-    # collect_position_dataset(controller, n=1)
-
-
+    collect_position_dataset(controller, n=20)
     # for i in range(100):
     #     time.sleep(0.1)
     #     if not (controller.position is None):
@@ -173,9 +174,9 @@ try:
     # print(f'Goal is {goal}')
 
     # for i in range(10000):
-    #     if (controller.go_to_point(goal, speed=200)):
-    #         goal = get_random_border_point()
-    #         print(f'Goal is {goal}')
+    #     # if (controller.go_to_point(goal, speed=200)):
+    #     #     goal = get_random_border_point()
+    #     #     print(f'Goal is {goal}')
 
     #     if(controller.orient_towards(goal)):
     #         controller.stop_robot()
@@ -195,6 +196,5 @@ try:
 except Exception as e:
     print(e)
 finally:
-    pipuck.epuck.set_motor_speeds(0, 0)
-    #controller.stop_robot()
-    # controller.stop_mqtt()
+    controller.stop_robot()
+    controller.stop_mqtt()
