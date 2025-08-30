@@ -28,6 +28,20 @@ def synchronize_intercepts(agents):
     synchronized = list(set(sum([agent.all_intercepts for agent in agents], [])))
     for agent in agents:
         agent.all_intercepts = synchronized.copy()
+
+def synchronize_clearing_maps(agents):
+    nodes_to_clear = set(agents[0].clearing_map.keys())
+
+    for agent in agents:
+        nodes_to_clear = nodes_to_clear & {node for node in agent.clearing_map.keys() if not agent.clearing_map[node].get('cleared', False)}
+
+    synchronized_map = agents[0].clearing_map.copy()
+    for node in synchronized_map:
+        synchronized_map[node]['cleared'] = node in nodes_to_clear
+
+    for agent in agents:
+        agent.clearing_map = synchronized_map.copy()
+
     
 def synchronize_information(agents):
     if len(agents) <= 1:
@@ -35,6 +49,7 @@ def synchronize_information(agents):
     synchronize_agent_maps(agents)
     synchronize_finished_exploring(agents)
     synchronize_intercepts(agents)
+    synchronize_clearing_maps(agents)
 
 
 def find_groups(agents, edges):

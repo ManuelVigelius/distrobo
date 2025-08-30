@@ -90,7 +90,6 @@ def animate_trajectories(fig, node_positions, trajectories, node_colors=None, hi
         )])
 
 def get_node_color_for_agent(agent_id, n_nodes, explored_nodes):
-    print(n_nodes)
     n_timesteps = len(explored_nodes[agent_id])
     node_colors = np.full((n_timesteps, n_nodes), 'rgba(0, 0, 0, 255)', dtype=object)
 

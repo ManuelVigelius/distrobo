@@ -95,7 +95,7 @@ def calculate_robots_required_for_clear(edges):
     full_tree_clear_cost = full_tree_clear_cost.groupby('start_node').min().reset_index()
 
     start_node, required_robots = full_tree_clear_cost.iloc[np.argmin(full_tree_clear_cost['value'])]
-    return start_node, required_robots
+    return start_node, required_robots, subtree_clear_costs
 
 def extract_subtree(root, edges):
     processed_nodes = set()

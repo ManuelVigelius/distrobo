@@ -4,10 +4,6 @@ class TreeNode:
         self.parent = parent
         self.children = []
     
-    def add_child(self, child_node):
-        child_node.parent = self
-        self.children.append(child_node)
-    
     def __repr__(self):
         return f"Node({self.value})"
 
@@ -26,6 +22,9 @@ class ExploringAgent:
         self.intercept_responsibility = None
         self.responsibility = responsibility if responsibility else self.id
         self.all_intercepts = []
+
+        self.clearing_map = None
+        self.is_clearing = True
     
     def visit_node(self, node):
         """Visit a node and update the map with its structure"""
@@ -33,8 +32,8 @@ class ExploringAgent:
         current_entry = self.node_map.get(node.value, {'visited': False})
         if not current_entry['visited']:
             current_entry.update({
-                'parent': node.parent.value if node.parent else None,
-                'children': [child.value for child in node.children],
+                'parent': node.parent,
+                'children': node.children.copy(),
                 'visited': True
             })
             self.node_map[node.value] = current_entry
@@ -91,6 +90,21 @@ class ExploringAgent:
             
         return True
     
+    def _calculate_clear_step(self, node_value, responsibility, local_map):            
+        node_info = local_map[node_value]
+
+        if node_info.get('cleared', False):
+            return 'continue'
+
+        responsibilities = node_info.get('responsibilities', [])
+        if responsibility in responsibilities:
+            return 'step down'
+        
+        for child_value in node_info.get('children', []):
+            if self._calculate_clear_step(child_value, responsibility) == 'step down':
+                return 'step down'
+        return 'stay'
+    
     def step(self):
         if self.responsibility is not None:
             return self.open_explore_step()
@@ -122,6 +136,24 @@ class ExploringAgent:
         
         self.intercept_responsibility = None
         return self.step()
+    
+    def clear_step(self, local_root):
+        keep_staying = False
+        for child_value in self.current_children()[::-1]:
+            step = self._calculate_clear_step(child_value, self.responsibility, self.clearing_map)
+            if step == 'step down':
+                return child_value
+            if step == 'stay':
+                keep_staying = True
+        if keep_staying:
+            return self.current_node
+        
+        self.clearing_map[self.current_node]['cleared'] = True
+        if self._calculate_clear_step(local_root, self.intercept_responsibility, self.clearing_map) == 'continue':
+            self.responsibility = None
+
+        return self.clearing_map[self.current_node].parent
+        
     
     def update_map(self):
         self.visit_node(self.current_node)
